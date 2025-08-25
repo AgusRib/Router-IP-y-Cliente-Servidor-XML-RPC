@@ -28,10 +28,10 @@ class Client:
         self.client, self.err = self.master.connect((address, port))
     #-----------------------------------
 
+    def andar(self):
+        sentence = input('Input lowercase sentence:')
 
-    sentence = input('Input lowercase sentence:')
-
-    self.cliente.send(sentence.encode())
-    modifiedSentence, self.err = self.cliente.recv(1024)
-    print('From Server: ', modifiedSentence.decode())
-    self.cliente.close()
+        self.cliente.send(sentence.encode())
+        modifiedSentence, self.err = self.cliente.recv(1024)
+        print('From Server: ', modifiedSentence.decode())
+        self.cliente.close()
