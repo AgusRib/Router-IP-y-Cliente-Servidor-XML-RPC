@@ -20,13 +20,13 @@ from xmlrpc.client import loads, dumps, Fault
 
 class Client:
 
-    def __init__(self):
-        self.master = None
+    #def __init__(self):
+        #self.master = None
         #self.master.bind(("*", 0))
-        self.client = None
-        self.err = None
-        self.address = None
-        self.port = None 
+        #self.client = None
+       # self.err = None
+        #self.address = None
+        #self.port = None# 
 
 
     #capaz que el connect es init Y connect, lo q pide la letra
@@ -48,8 +48,8 @@ class Client:
         #clientSocket.close()
 
     def call_method(self, method_name, *args):
-        
-
+        errparseo=0
+        fault1234=0
         # Creo el respuesta XML-RPC----------
         envio_xml = dumps(tuple(args), methodname=method_name)
 
@@ -69,7 +69,7 @@ class Client:
         # Enviamo --------------------------
         total_sent = 0
         while total_sent < len(envio_http):
-          sent = self.client.send(envio_http.encode()[total_sent:])
+          sent = self.client.send(envio_http[total_sent:])
           total_sent += sent
         #-----------------------------------        
 
@@ -85,6 +85,7 @@ class Client:
             # Busco el Content-Length en las cabeceras
             found = False
             headers = respuesta.split('\r\n\r\n')[0]
+             
             for line in headers.split('\r\n'):
                 if not found and 'Content-Length:' in line:
                     content_length = int(line.split(':')[1].strip())
@@ -92,22 +93,33 @@ class Client:
             
             # Leer el body con contentlenght como cond de parada
             largocuerpo = len(respuesta.split('\r\n\r\n')[1])
+            
             while largocuerpo < content_length:
                 parte = self.client.recv(10).decode()
                 respuesta += parte
-                largocuerpo += len(parte)
 
-            # Unmarshallea el respuesta de XML-RPC a string (lo hace automaticamente loads)
+                largocuerpo += len(parte)
+            
+            # Unmarshallea el respuesta de XML-RPC a string
             try:  
                 resultado = loads(respuesta.split('\r\n\r\n')[1])
+                
+                    
+                return resultado[0][0]  # Si no es fault, retornar el resultado
             except Exception as e:
-                print(f"Fault 1, Error al parsear XML: {str(e)}")
-            else:
-                #Solo sigue si no hubo error de parsing
-                return resultado[0][0]  #el loads devuelve una tupla (params, methodname), params es una tupla (resu,)
-
+                
+                fault1234=1
+                raise Exception(str(e))
+            except xml.parsers.expat.ExpatError as e:
+                # Error específico de parseo XML en el cliente
+                errparseo=1
+                raise Exception(Fault(1, f"Error al parsear XML(Cliente): {str(e)}"))
+                
         except Exception as e:
-                # Fault 5: Solo si ocurre un error no manejado
-                print("Fault 5, Error no manejado")
+            if fault1234==1 or errparseo==1:
+                raise
+                # Re-raise faults del servidor sin modificar
+        
+            # Error imprevisto en el cliente
+            raise Exception(Fault(5, f"Error del cliente: {str(e)}"))
 
-        #-----------------------------------    
