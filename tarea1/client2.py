@@ -38,7 +38,42 @@ class Client:
         self.address = address
         self.port = port
     #---------------/\ REVISAR /\---------------------
+    def construirXML(self, method_name, *args):
+        
+        xml = "<?xml version='1.0'?>"
+        xml += "<methodCall>"
+        xml += f"<methodName>{method_name}</methodName>"
+        xml += "<params>"
+        for arg in args:
+            xml += "<param><value>"
+            if isinstance(arg, int):
+                xml += f"<int>{arg}</int>"
+            elif isinstance(arg, str):
+                xml += f"<string>{arg}</string>"
+            # Agregar más tipos de datos según sea necesario
+            xml += "</value></param>"
+        xml += "</params>"
+        xml += "</methodCall>"
+        return xml
 
+    def parseResponse(self, response):
+        root = ET.fromstring(response)
+        if root.find('.//fault') is not None:
+            fault = root.find('.//fault/value/struct')
+            fault_code = int(fault.find(".//member[name='faultCode']/value/int").text)
+            fault_string = fault.find(".//member[name='faultString']/value/string").text
+            raise Exception(fault_code, fault_string)
+        else:
+            params = root.findall('.//params/param/value')
+            param = params[0]
+            if param.find('int') is not None:
+                return int(param.find('int').text)
+            elif param.find('string') is not None:
+                return param.find('string').text
+            
+
+
+        
 
 
     def __getattr__(self, name): #checkear si es lo mas conveniente, si no pudeo directamente implementar todo en el getattr o su alternativa
@@ -50,8 +85,9 @@ class Client:
     def call_method(self, method_name, *args):
         
 
-        # Creo el respuesta XML-RPC----------
-        envio_xml = dumps(tuple(args), methodname=method_name)
+        # Creo el respuesta XML-RPC---------
+        envio_xml = self.construirXML(method_name, *args)
+        
 
         # Agregamos el formato HTTP
         envio_xmlBytes = envio_xml.encode()
@@ -69,7 +105,7 @@ class Client:
         # Enviamo --------------------------
         total_sent = 0
         while total_sent < len(envio_http):
-          sent = self.client.send(envio_http.encode()[total_sent:])
+          sent = self.client.send(envio_http[total_sent:])
           total_sent += sent
         #-----------------------------------        
 
@@ -81,33 +117,40 @@ class Client:
             while '\r\n\r\n' not in respuesta:
                 parte = self.client.recv(10).decode()
                 respuesta += parte
+                
             
             # Busco el Content-Length en las cabeceras
+            
             found = False
             headers = respuesta.split('\r\n\r\n')[0]
             for line in headers.split('\r\n'):
                 if not found and 'Content-Length:' in line:
-                    content_length = int(line.split(':')[1].strip())
+                    content_length = int(line.split(':')[1])
                     found = True
-            
             # Leer el body con contentlenght como cond de parada
+            
             largocuerpo = len(respuesta.split('\r\n\r\n')[1])
             while largocuerpo < content_length:
                 parte = self.client.recv(10).decode()
+                if (len(parte) == 0):
+                    break
                 respuesta += parte
                 largocuerpo += len(parte)
 
+            
             # Unmarshallea el respuesta de XML-RPC a string (lo hace automaticamente loads)
-            try:  
-                resultado = loads(respuesta.split('\r\n\r\n')[1])
+            try:
+                resultado = self.parseResponse(respuesta.split('\r\n\r\n')[1])
             except Exception as e:
-                print(f"Fault 1, Error al parsear XML: {str(e)}")
+                print(e)
             else:
                 #Solo sigue si no hubo error de parsing
-                return resultado[0][0]  #el loads devuelve una tupla (params, methodname), params es una tupla (resu,)
+                return resultado
 
         except Exception as e:
                 # Fault 5: Solo si ocurre un error no manejado
                 print("Fault 5, Error no manejado")
+                
+                
 
         #-----------------------------------    
