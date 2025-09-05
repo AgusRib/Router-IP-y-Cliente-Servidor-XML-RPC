@@ -46,4 +46,3 @@ if __name__ == "__main__":
     t3.join()
     t4.join()
 
-    print("Terminaron todos los threads")

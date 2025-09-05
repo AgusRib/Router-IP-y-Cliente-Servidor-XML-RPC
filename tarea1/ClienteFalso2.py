@@ -1,4 +1,3 @@
-from datetime import datetime
 from socket import *
 import socket
 import _socket
@@ -107,15 +106,12 @@ class Client:
 
         # Agregamos el formato HTTP
         envio_xmlBytes = envio_xml.encode()
-        ahora=datetime.now()
-        ahora=ahora.strftime("%Y-%m-%d %H:%M:%S GMT")
         formateadohttp = (
             "POST /RPC2 HTTP/1.0\r\n"
             "User-Agent: fedora/28.5.04 (Fedora42)\r\n"
-            f"Date: {ahora}\r\n"
             f"Host: {self.address}:{self.port}\r\n"
             "Content-Type: text/xml\r\n"
-            f"Content-Length: {len(envio_xmlBytes)}\r\n"
+            f"Content-Length: \r\n"
             "\r\n"
         )
         envio_http = formateadohttp.encode() + envio_xmlBytes
@@ -177,4 +173,3 @@ class Client:
         
             # Error imprevisto en el cliente
             raise Exception(5, f"Error inesperado en el cliente: {str(e)}")
-
