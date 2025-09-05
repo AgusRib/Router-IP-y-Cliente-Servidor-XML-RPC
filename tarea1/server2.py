@@ -1,3 +1,4 @@
+from datetime import datetime
 from socket import *
 import socket
 import _socket
@@ -143,8 +144,11 @@ class Server:
             finally:
                 # Enviar la respuesta con el resu o el error
                 responsebytes = response.encode()
+                ahora = datetime.now()
+                ahora = ahora.strftime("%a, %d %b %Y %H:%M:%S GMT")
                 formateadohttp = (
                     "HTTP/1.1 200 OK\r\n"
+                    f"Date: {ahora}\r\n"
                     "Content-Type: text/xml\r\n"
                     f"Content-Length: {len(responsebytes)}\r\n"
                     "\r\n"
