@@ -101,10 +101,18 @@ class Server:
                     raise Exception("Header demasiado grande o no contiene los dos espacios del formato http")
 
             
+             # Verificar que sea método POST
+            if not request.startswith('POST'):
+                http_cabezal = "501 Not Implemented"
+                raise Exception("Solo se acepta método POST")
+
+
+
             # Busco el Content-Length en las cabeceras
             found = False
             headers = request.split('\r\n\r\n')[0]
             for line in headers.split('\r\n'):
+                
                 if not found and 'Content-Length:' in line:
                    try:
                     content_length = int(line.split(':')[1].strip())
