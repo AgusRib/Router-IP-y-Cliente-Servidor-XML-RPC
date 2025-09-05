@@ -7,6 +7,7 @@ def client_thread(thread_id):
     try:
         client = Client()
         client.connect("127.0.0.1", 12000)
+        time.sleep(1) 
         
         # Cada thread hace diferentes llamadas para testear concurrencia
         if thread_id % 3 == 0:
@@ -37,7 +38,7 @@ def test_concurrencia(num_clients=10):
     start_time = time.time()
     for t in threads:
         t.start()
-        time.sleep(0.1)  # Pequeña pausa entre inicio de clientes
+         # Pequeña pausa entre inicio de clientes
     
     # Esperar a que todos terminen
     for t in threads:

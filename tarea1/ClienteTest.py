@@ -1,6 +1,11 @@
 from client2 import Client
 import threading
 import time
+import ClienteFalso1
+import ClienteFalso2
+import ClienteFalso3
+import ClienteFalso4
+import ClienteFalso5
 
 def test_server1():
     print("Test Server1 de manejo de Enteros")
@@ -142,6 +147,31 @@ def test_server2():
         print("Error: CantOcurrencias con string y número no lanzó excepción",{result})
     except Exception as e:
         print(f"OK: CantOcurrencias con string y número lanzó excepción: {e}")
+    
+
+   #Test errores de protocolo HTTP y parseo XML
+    print("\nTesting errores de protocolo HTTP y parseo XML:")
+    print("-" * 50)
+    
+
+    # ClienteFalso1 usa GET en vez de POST
+    try:
+        clientefalso1 = Client()
+        clientefalso1.connect("127.0.0.1",12000)
+        resultado = clientefalso1.suma(5,3)
+        print("Error: ClienteFalso1 no lanzó excepción al usar GET en vez de POST",{resultado})
+    except Exception as e:
+        print(f"OK: ClienteFalso1 lanzó excepción al usar GET en vez de POST: {e}")
+
+    #ClienteFalso2 no envía Content-Length
+    try:
+        clientefalso2=Client()
+        clientefalso2.connect("127.0.0.1",12000)
+        resultado = clientefalso2.suma(5,3)
+        print("Error: ClienteFalso2 no lanzó excepción al no enviar Content-Length",{resultado})
+    except Exception as e:
+        print(f"OK: ClienteFalso2 lanzó excepción al no enviar Content-Length: {e}")
+
 
 
 
