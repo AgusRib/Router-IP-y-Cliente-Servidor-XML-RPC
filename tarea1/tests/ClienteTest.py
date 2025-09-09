@@ -1,6 +1,7 @@
 from client2 import Client
 import threading
 import time
+from lorem_text import lorem
 from ClienteFalso1 import ClienteFalso1
 from ClienteFalso2 import Cliente2
 from ClienteFalso3 import ClienteFalso3
@@ -224,14 +225,47 @@ def test_Falsos(): #===========================================
     except Exception as e:
         print(f"OK: ClienteFalso5 lanzó excepción al enviar XML con método inexistente: {e}")
 
-   
+def testsDemandados():
+    
+    try:
+        clienteD1 = Cliente2()
+        clienteD1.connect("127.0.0.1",12000)
+        resultado = clienteD1.quienEs()
+        print(f"{resultado}")
+    except Exception as e:
+        print(f"Error: {e}")
 
+    try:
+        clienteD2 = Cliente2()
+        clienteD2.connect("127.0.0.1",12000)
+        resultado = clienteD2.concatenameXVeces(5,"miau")
+        print(f"{resultado}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+    try:
+        clienteD3 = Cliente2()
+        clienteD3.connect("127.0.0.1",12000)
+        textazo = lorem.words(20000)
+        resultado = clienteD3.repetime(textazo)
+        print(f"{resultado}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+    try:
+        clienteD4 = Cliente2()
+        clienteD4.connect("127.0.0.1",12000)
+        resultado = clienteD4.demorame("pio pio")
+        print(f"{resultado}")
+    except Exception as e:
+        print(f"Error: {e}")
 
 def main():
     print("Empieza test")
     test_server1()
     test_server2()
     test_Falsos()
+    testsDemandados()
     print("\nTest finalizado")
 
 if __name__ == "__main__":

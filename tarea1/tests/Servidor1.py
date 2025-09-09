@@ -22,6 +22,8 @@ def dividir(a, b):
 def ordenar(numeros):
     return sorted(numeros)
     
+def quienEs():
+    return "Soy Yo..."
 
 
 
@@ -31,6 +33,7 @@ def main():
     server1.add_method(multiplicar)
     server1.add_method(ordenar)
     server1.add_method(dividir)
+    server1.add_method(quienEs)
     server1.serve()
 
 
