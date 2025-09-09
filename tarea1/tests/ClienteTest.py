@@ -237,7 +237,7 @@ def testsDemandados():
 
     try:
         clienteD2 = Cliente2()
-        clienteD2.connect("127.0.0.1",12000)
+        clienteD2.connect("127.0.0.1",13000)
         resultado = clienteD2.concatenameXVeces(5,"miau")
         print(f"{resultado}")
     except Exception as e:
@@ -245,7 +245,7 @@ def testsDemandados():
 
     try:
         clienteD3 = Cliente2()
-        clienteD3.connect("127.0.0.1",12000)
+        clienteD3.connect("127.0.0.1",13000)
         textazo = lorem.words(20000)
         resultado = clienteD3.repetime(textazo)
         print(f"{resultado}")
@@ -254,11 +254,55 @@ def testsDemandados():
 
     try:
         clienteD4 = Cliente2()
-        clienteD4.connect("127.0.0.1",12000)
+        clienteD4.connect("127.0.0.1",13000)
         resultado = clienteD4.demorame("pio pio")
         print(f"{resultado}")
     except Exception as e:
         print(f"Error: {e}")
+
+def testErroresDemandados():
+     # Test método inexistente
+    try:
+        client = Cliente2()
+        client.connect("127.0.0.1", 13000)
+        result = client.metodo_inexistente(1, 2)
+        print("Error: método inexistente no lanzó excepción")
+    except Exception as e:
+        print(f"OK: método inexistente lanzó excepción: {e}")
+
+    # Test parámetros inválidos
+    try:
+        client = Cliente2()
+        client.connect("127.0.0.1", 13000)
+        result = client.concat(123, "paulo")
+        print("Error: concat con número y stringg no lanzó excepción",{result})
+    except Exception as e:
+        print(f"OK: concat con números lanzó excepción: {e}")
+    
+    try:
+        client = Cliente2()
+        client.connect("127.0.0.1", 13000)
+        result = client.sonIguales("test", 123,33)
+        print("Error: sonIguales con 3 parametros no lanzó excepción",{result})
+    except Exception as e:
+        print(f"OK: sonIguales con 3 parametros lanzó excepción: {e}")
+    
+    try:
+        client = Cliente2()
+        client.connect("127.0.0.1",13000)
+        result = client.sonIguales("test")
+        print("Error: sonIguales con 1 parametro no lanzó excepción",{result})
+    except Exception as e:
+        print(f"OK: sonIguales con 1 parametro lanzó excepción: {e}")   
+    
+    #Test error interno funcion 
+    try:
+        client = Cliente2()
+        client.connect("127.0.0.1", 12000)
+        result = client.dividir(5,0)
+        print("Error: dividir por cero no lanzó excepción")
+    except Exception as e:
+        print(f"OK: dividir por cero lanzó excepción: {e}")
 
 def main():
     print("Empieza test")
@@ -266,6 +310,7 @@ def main():
     test_server2()
     test_Falsos()
     testsDemandados()
+    testErroresDemandados()
     print("\nTest finalizado")
 
 if __name__ == "__main__":
