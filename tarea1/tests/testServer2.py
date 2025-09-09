@@ -5,7 +5,7 @@
 #  -d '{"method": "suma", "params": [3, 5]}'
 
 
-from server2 import Server
+from tarea1.tests.server2 import Server
 
 def suma(a, b):
     return a + b

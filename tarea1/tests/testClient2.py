@@ -1,4 +1,4 @@
-from client2 import Client
+from tarea1.tests.client2 import Client
 import threading
 
 def conectarSuma(direccion, puerto):
