@@ -141,6 +141,11 @@ class Client:
                 parte = self.client.recv(10).decode()
                 respuesta += parte
             
+                if not parte: #checkea q no haya cerrau la conección
+                    self.master.close()
+                    raise Exception("El servidor cerró la conexión")
+
+            
             # Busco el Content-Length en las cabeceras
             found = False
             headers = respuesta.split('\r\n\r\n')[0]
@@ -155,6 +160,10 @@ class Client:
                 parte = self.client.recv(10).decode()
                 respuesta += parte
                 largocuerpo += len(parte)
+                
+                if not parte: #checkea q no haya cerrau la conección
+                    self.master.close()
+                    raise Exception("El servidor cerró la conexión")
 
             # Unmarshallea el respuesta de XML-RPC a string
             try:  

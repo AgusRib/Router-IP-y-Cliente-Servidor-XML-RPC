@@ -107,6 +107,11 @@ class Server:
                     else:  
                         http_cabezal= "408 Timeout"
                         raise Exception("Timeout esperando datos del cliente")
+                    
+                if not parte: #checkea q no haya cerrau la conección
+                    client_socket.close()
+                    raise Exception("El cliente cerro la conexion")
+                
 
                 request += parte
                 
@@ -145,6 +150,10 @@ class Server:
                 except socket.timeout:
                     http_cabezal= "408 Timeout"
                     raise Exception("Timeout esperando datos del cliente")
+                
+                if not parte: #checkea q no haya cerrau la conección
+                    client_socket.close()
+                    raise Exception("El cliente cerro la conexion")
                 request += parte
                 largocuerpo += len(parte)
 
