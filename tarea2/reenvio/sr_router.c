@@ -55,10 +55,80 @@ void sr_send_icmp_error_packet(uint8_t type,
                               uint32_t ipDst,
                               uint8_t *ipPacket)
 {
+ assert(sr);
+    assert(ipPacket);
 
-  /* COLOQUE AQUÍ SU CÓDIGO*/
+    struct sr_ip_hdr *orig_ip_hdr = (struct sr_ip_hdr *)ipPacket;
+    struct sr_rt *rt_entry = sr_prefijo_mas_largo(sr, ipDst);
+    if (!rt_entry) {
+      print "$$$ -> ERROR no se encontro entrada en la tabla de reenvio.\n";
+        return;
+    }
 
-} /* -- sr_send_icmp_error_packet -- */
+    struct sr_if *interfaz_salida = sr_get_interface(sr, rt_entry->interface);
+    if (!interfaz_salida) {
+      print "$$$ -> ERROR no se encontro la interfaz de salida.\n";
+        return;
+    }
+
+
+    uint32_t next_hop_ip = (rt_entry->gw.s_addr != 0) ? rt_entry->gw.s_addr : ipDst;
+
+  
+
+    /* Armar ICMP header */
+    if (type == 3) {
+          uint8_t icmp_packet[sizeof(sr_icmp_t3_hdr_t)];
+          uint16_t icmp_len;
+        sr_icmp_t3_hdr_t *icmp3 = (sr_icmp_t3_hdr_t *)icmp_packet;
+        icmp3->icmp_type = type;
+        icmp3->icmp_code = code;
+        icmp3->unused = 0;
+        icmp3->next_mtu = 0;
+        memcpy(icmp3->data, ipPacket, ICMP_DATA_SIZE);
+        icmp3->icmp_sum = 0;
+        icmp3->icmp_sum = icmp3_cksum((uint16_t *)icmp3, sizeof(sr_icmp_t3_hdr_t));
+        icmp_len = sizeof(sr_icmp_t3_hdr_t);
+    } else if (type == 11) {
+        uint8_t icmp_packet[sizeof(sr_icmp_hdr_t) + ICMP_DATA_SIZE];
+        uint16_t icmp_len;
+        sr_icmp_hdr_t *icmp11 = (sr_icmp_hdr_t *)icmp_packet;
+        icmp11->icmp_type = type;
+        icmp11->icmp_code = code;
+        icmp11->icmp_sum = 0;
+        memcpy(icmp_packet + sizeof(sr_icmp_hdr_t), ipPacket, ICMP_DATA_SIZE);
+        icmp11->icmp_sum = icmp_cksum((uint16_t *)icmp_packet,
+                                 sizeof(sr_icmp_hdr_t) + ICMP_DATA_SIZE);
+        icmp_len = sizeof(sr_icmp_hdr_t) + ICMP_DATA_SIZE;
+    } else {
+        return;
+    }
+
+    /* Armar IP header */
+    uint8_t ip_nupacket[sizeof(sr_ip_hdr_t) + icmp_len];
+    struct sr_ip_hdr *ip_hdr = (struct sr_ip_hdr *)ip_nupacket;
+    ensamblar_ip_header(ip_hdr, interfaz_salida->ip, orig_ip_hdr->ip_src,
+                    sizeof(ip_nupacket), ip_protocol_icmp);
+    memcpy(ip_nupacket + sizeof(sr_ip_hdr_t), icmp_packet, icmp_len);
+
+    /* Resolver MAC destino (ARP) */
+    struct sr_arpentry *entry = sr_arpcache_lookup(&sr->cache, next_hop_ip);
+    if (entry) {
+        uint8_t paquete_completo[sizeof(sr_ethernet_hdr_t) + sizeof(ip_nupacket)];
+        struct sr_ethernet_hdr *eth_hdr = (struct sr_ethernet_hdr *)paquete_completo;
+
+        ensamblar_eth_header(eth_hdr, interfaz_salida->addr, entry->mac, ethertype_ip);
+        memcpy(paquete_completo + sizeof(sr_ethernet_hdr_t), ip_nupacket, sizeof(ip_nupacket));
+
+        sr_send_packet(sr, paquete_completo, sizeof(paquete_completo), interfaz_salida->name);
+        free(entry);
+    } else {
+        sr_arpcache_queuereq(&sr->cache, next_hop_ip,
+                             ip_nupacket, sizeof(ip_nupacket), interfaz_salida->name);
+    }
+  
+
+} 
 
 void sr_handle_ip_packet(struct sr_instance *sr,
         uint8_t *packet /* lent */,
@@ -177,3 +247,66 @@ void sr_handlepacket(struct sr_instance* sr,
   }
 
 }/* end sr_ForwardPacket */
+
+
+
+    /* Funciones Auxiliares para envios */
+
+
+    
+    /* apartir de una ip encuentra su prefijo mas largo correspondiente a una entrada de la tabla para luego poder identificar la interfaz de salida
+     asociada */
+struct sr_rt* sr_prefijo_mas_largo(struct sr_instance* sr, uint32_t ip)
+{
+    struct sr_rt* rt_iterador = sr->routing_table;
+    struct sr_rt* mejor_entrada = NULL;
+    uint32_t mask_maslargo = 0;
+
+    while (rt_iterador != NULL) {
+        uint32_t masked_ip = ip & rt_iterador->mask.s_addr;
+        uint32_t masked_dest = rt_iterador->dest.s_addr & rt_iterador->mask.s_addr;
+
+        if (masked_ip == masked_dest) {
+            uint32_t mask_len = ntohl(rt_iterador->mask.s_addr);
+            if (mask_len > mask_maslargo) {
+                mask_maslargo = mask_len;
+                mejor_entrada = rt_iterador;
+            }
+        }
+        rt_iterador = rt_iterador->next;
+    }
+    return mejor_entrada;
+}
+
+   /* construye el cabezal ip*/
+
+void ensamblar_ip_header(struct sr_ip_hdr *ip_hdr,
+                     uint32_t src_ip,
+                     uint32_t dst_ip,
+                     uint16_t total_len,
+                     uint8_t protocol)
+{
+    ip_hdr->ip_v = 4;
+    ip_hdr->ip_hl = 5;
+    ip_hdr->ip_tos = 0;
+    ip_hdr->ip_len = htons(total_len);
+    ip_hdr->ip_id = 0;
+    ip_hdr->ip_off = 0;
+    ip_hdr->ip_ttl = 64;
+    ip_hdr->ip_p = protocol;
+    ip_hdr->ip_src = src_ip;
+    ip_hdr->ip_dst = dst_ip;
+    ip_hdr->ip_sum = 0;
+    ip_hdr->ip_sum = ip_cksum((uint16_t *)ip_hdr, sizeof(sr_ip_hdr_t));
+}
+
+/* construye el cabezal ethernet*/
+void ensamblar_eth_header(struct sr_ethernet_hdr *eth_hdr,
+                      uint8_t *src_mac,
+                      uint8_t *dst_mac,
+                      uint16_t ethertype)
+{
+    memcpy(eth_hdr->ether_shost, src_mac, ETHER_ADDR_LEN);
+    memcpy(eth_hdr->ether_dhost, dst_mac, ETHER_ADDR_LEN);
+    eth_hdr->ether_type = htons(ethertype);
+}
