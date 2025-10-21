@@ -29,6 +29,52 @@ void sr_arp_request_send(struct sr_instance *sr, uint32_t ip) {
   * - Construya el cabezal ARP y envíe el paquete
   */
   
+/* Build and send an ARP request out of each interface (safe, simple approach).
+     For each interface we set:
+       - Ethernet dst = broadcast
+       - Ethernet src = iface MAC
+       - Ethertype = ARP
+       - ARP fields: hw type = 1, proto = IP, hlen=6, plen=4, op = request
+       - ARP sha = iface MAC, tha = 0, s_ip = iface IP, t_ip = ip (target)
+  */
+
+  struct sr_if *iface = sr->if_list;
+  while (iface) {
+    int arpLen = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+    uint8_t *arpPacket = (uint8_t *) malloc(arpLen);
+    if (!arpPacket) {
+      iface = iface->next;
+      continue;
+    }
+
+    sr_ethernet_hdr_t *ethHdr = (sr_ethernet_hdr_t *) arpPacket;
+    /* dest = broadcast */
+    memset(ethHdr->ether_dhost, 0xff, ETHER_ADDR_LEN);
+    /* src = iface mac */
+    memcpy(ethHdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
+    ethHdr->ether_type = htons(ethertype_arp);
+
+    sr_arp_hdr_t *arpHdr = (sr_arp_hdr_t *) (arpPacket + sizeof(sr_ethernet_hdr_t));
+    arpHdr->ar_hrd = htons(1);
+    arpHdr->ar_pro = htons(ethertype_ip);
+    arpHdr->ar_hln = ETHER_ADDR_LEN;
+    arpHdr->ar_pln = 4;
+    arpHdr->ar_op = htons(arp_op_request);
+
+    memcpy(arpHdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
+    memset(arpHdr->ar_tha, 0x00, ETHER_ADDR_LEN);
+
+    /* iface->ip is expected to be stored in network byte order like other codepaths */
+    arpHdr->ar_sip = iface->ip;
+    arpHdr->ar_tip = ip;
+
+    sr_send_packet(sr, arpPacket, arpLen, iface->name);
+
+    free(arpPacket);
+
+    iface = iface->next;
+  }
+
   printf("$$$ -> Send ARP request processing complete.\n");
 }
 
