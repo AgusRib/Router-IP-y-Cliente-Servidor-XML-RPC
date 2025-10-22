@@ -130,7 +130,47 @@ void handle_arpreq(struct sr_instance *sr, struct sr_arpreq *req) {
 
 /* Envía un mensaje ICMP host unreachable a los emisores de los paquetes esperando en la cola de una solicitud ARP */
 void host_unreachable(struct sr_instance *sr, struct sr_arpreq *req) {
-    /* COLOQUE SU CÓDIGO AQUÍ */
+    struct sr_packet *packet = req->packets;
+    
+    while (packet != NULL) {
+        /* Get the IP header from the packet */
+        sr_ip_hdr_t *ip_hdr = (sr_ip_hdr_t *)(packet->buf + sizeof(sr_ethernet_hdr_t));
+        
+        /* Create ICMP packet */
+        unsigned int icmp_len = sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t);
+        uint8_t *icmp_packet = (uint8_t *)malloc(icmp_len);
+        
+        /* Fill ICMP header */
+        sr_icmp_t3_hdr_t *icmp_hdr = (sr_icmp_t3_hdr_t *)(icmp_packet + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t));
+        icmp_hdr->icmp_type = 3;  /* Destination unreachable */
+        icmp_hdr->icmp_code = 1;  /* Host unreachable */
+        icmp_hdr->unused = 0;
+        icmp_hdr->next_mtu = 0;
+        memcpy(icmp_hdr->data, ip_hdr, ICMP_DATA_SIZE);
+        icmp_hdr->icmp_sum = 0; 
+        icmp_hdr->icmp_sum = cksum(icmp_hdr, sizeof(sr_icmp_t3_hdr_t));
+        
+        /* Fill IP header */
+        sr_ip_hdr_t *new_ip_hdr = (sr_ip_hdr_t *)(icmp_packet + sizeof(sr_ethernet_hdr_t));
+        new_ip_hdr->ip_hl = 5;
+        new_ip_hdr->ip_v = 4;
+        new_ip_hdr->ip_tos = 0;
+        new_ip_hdr->ip_len = htons(sizeof(sr_ip_hdr_t) + sizeof(sr_icmp_t3_hdr_t));
+        new_ip_hdr->ip_id = 0;
+        new_ip_hdr->ip_off = htons(IP_DF);
+        new_ip_hdr->ip_ttl = 64;
+        new_ip_hdr->ip_p = ip_protocol_icmp;
+        new_ip_hdr->ip_src = sr_get_interface(sr, packet->iface)->ip;
+        new_ip_hdr->ip_dst = ip_hdr->ip_src;
+        new_ip_hdr->ip_sum = 0;
+        new_ip_hdr->ip_sum = cksum(new_ip_hdr, sizeof(sr_ip_hdr_t));
+        
+        /* Send packet */
+        sr_send_packet(sr, icmp_packet, icmp_len, packet->iface);
+        free(icmp_packet);
+        
+        packet = packet->next;
+    }
 }
 
 /* NO DEBERÍA TENER QUE MODIFICAR EL CÓDIGO A PARTIR DE AQUÍ. */

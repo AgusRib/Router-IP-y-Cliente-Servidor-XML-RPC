@@ -160,18 +160,55 @@ void sr_handle_arp_packet(struct sr_instance *sr,
         char *interface /* lent */,
         sr_ethernet_hdr_t *eHdr) {
 
-  /* Imprimo el cabezal ARP */
-  printf("*** -> It is an ARP packet. Print ARP header.\n");
-  print_hdr_arp(packet + sizeof(sr_ethernet_hdr_t));
-
-  /* COLOQUE SU CÓDIGO AQUÍ
-  
+    /* Imprimo el cabezal ARP */
+    printf("*** -> It is an ARP packet. Print ARP header.\n");
+    print_hdr_arp(packet + sizeof(sr_ethernet_hdr_t));
+  /*        
   SUGERENCIAS:
   - Verifique si se trata de un ARP request o ARP reply 
   - Si es una ARP request, antes de responder verifique si el mensaje consulta por la dirección MAC asociada a una dirección IP configurada en una interfaz del router
   - Si es una ARP reply, agregue el mapeo MAC->IP del emisor a la caché ARP y envíe los paquetes que hayan estado esperando por el ARP reply
   
   */
+
+    sr_arp_hdr_t *arp_hdr = (sr_arp_hdr_t *)(packet + sizeof(sr_ethernet_hdr_t));
+    struct sr_if *iface = sr_get_interface(sr, interface);
+
+    /* Cache the ARP info */
+    struct sr_arpreq *req = sr_arpcache_insert(&(sr->cache), arp_hdr->ar_sha, arp_hdr->ar_sip);
+    
+    if (ntohs(arp_hdr->ar_op) == arp_op_request) {
+      if (arp_hdr->ar_tip == iface->ip) {  
+        /* Send ARP reply */
+          uint8_t *reply = malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
+          sr_ethernet_hdr_t *replyEthHdr = (sr_ethernet_hdr_t *)reply;
+          sr_arp_hdr_t *replyarp_hdr = (sr_arp_hdr_t *)(reply + sizeof(sr_ethernet_hdr_t));
+
+          /* Fill ethernet header */
+          ensamblar_eth_header(replyEthHdr, arp_hdr->ar_sha, arp_hdr->ar_sha, ethertype_arp);
+
+
+          /* Fill ARP header */
+          replyarp_hdr->ar_hrd = htons(arp_hrd_ethernet);
+          replyarp_hdr->ar_pro = htons(ethertype_ip);
+          replyarp_hdr->ar_hln = ETHER_ADDR_LEN;
+          replyarp_hdr->ar_pln = 4;
+          replyarp_hdr->ar_op = htons(arp_op_reply);
+          memcpy(replyarp_hdr->ar_sha, iface->addr, ETHER_ADDR_LEN);
+          replyarp_hdr->ar_sip = iface->ip;
+          memcpy(replyarp_hdr->ar_tha, arp_hdr->ar_sha, ETHER_ADDR_LEN);
+          replyarp_hdr->ar_tip = arp_hdr->ar_sip;
+
+          sr_send_packet(sr, reply, sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t), interface);
+          free(reply);
+      }
+    } else if (ntohs(arp_hdr->ar_op) == arp_op_reply) {
+        
+      
+
+      
+        
+    }
 }
 
 /* 
