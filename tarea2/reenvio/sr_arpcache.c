@@ -38,22 +38,16 @@ void sr_arp_request_send(struct sr_instance *sr, uint32_t ip) {
        - ARP sha = iface MAC, tha = 0, s_ip = iface IP, t_ip = ip (target)
   */
 
-  struct sr_if *iface = sr->if_list;
-  while (iface) {
+  struct sr_rt *mejor_entrada = sr_prefijo_mas_largo(sr, ip);
+ 
     int arpPacketLen = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
     uint8_t *arpPacket = (uint8_t *) malloc(arpPacketLen);
-    if (!arpPacket) {
-      iface = iface->next;
-      continue;
-    }
+    struct sr_if *iface = sr_get_interface(sr, mejor_entrada->interface);
 
     sr_ethernet_hdr_t *ethHdr = (sr_ethernet_hdr_t *) arpPacket;
-    /* dest = broadcast */
-    memset(ethHdr->ether_dhost, 0xff, ETHER_ADDR_LEN);
-    /* src = iface mac */
-    memcpy(ethHdr->ether_shost, iface->addr, ETHER_ADDR_LEN);
-    ethHdr->ether_type = htons(ethertype_arp);
+    ensamblar_eth_header(ethHdr,0xff, iface->addr, ethertype_arp);
 
+    //ensambla arp header
     sr_arp_hdr_t *arpHdr = (sr_arp_hdr_t *) (arpPacket + sizeof(sr_ethernet_hdr_t));
     arpHdr->ar_hrd = htons(1);
     arpHdr->ar_pro = htons(ethertype_ip);
@@ -72,10 +66,9 @@ void sr_arp_request_send(struct sr_instance *sr, uint32_t ip) {
 
     free(arpPacket);
 
-    iface = iface->next;
-  }
+  
 
-  printf("$$$ -> Send ARP request processing complete.\n");
+  printf("$$$ -> Send ARP request processing complete.\n");}
 
   /* Ejemplo de la letra:
   
@@ -95,7 +88,7 @@ void sr_arp_request_send(struct sr_instance *sr, uint32_t ip) {
     memcpy(arpHdr->ar_tha, <target address>, ETHER_ADDR_LEN);
     arpHdr->ar_sip = <sender IP>;
     arpHdr->ar_tip = <target IP>;*/
-}
+
 
 /*
   Para cada solicitud enviada, se verifica si se debe enviar otra solicitud o descartar la solicitud ARP.
