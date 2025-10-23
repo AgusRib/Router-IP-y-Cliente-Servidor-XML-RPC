@@ -228,7 +228,7 @@ void sr_handle_ip_packet(struct sr_instance *sr,
         /* If packet to router and TCP/UDP -> send ICMP port unreachable */
         if (ip_hdr->ip_p == ip_protocol_tcp || ip_hdr->ip_p == ip_protocol_udp) {
             /* send ICMP port unreachable back to source */
-            sr_send_icmp_error_packet(3, 3, sr, ip_hdr->ip_src, (uint8_t *)ip_hdr);
+            sr_send_icmp_error_packet(3, 3, sr, ip_hdr->ip_src,  packet + sizeof(sr_ethernet_hdr_t));
             return;
         }
 
@@ -241,7 +241,7 @@ void sr_handle_ip_packet(struct sr_instance *sr,
     /* TTL handling */
     if (ip_hdr->ip_ttl <= 1) {
         /* send ICMP time exceeded to original sender */
-        sr_send_icmp_error_packet(11, 0, sr, ip_hdr->ip_src, (uint8_t *)ip_hdr);
+        sr_send_icmp_error_packet(11, 0, sr, ip_hdr->ip_src,  packet + sizeof(sr_ethernet_hdr_t));
         return;
     }
 
@@ -254,7 +254,7 @@ void sr_handle_ip_packet(struct sr_instance *sr,
     struct sr_rt *rt_entry = sr_prefijo_mas_largo(sr, ip_hdr->ip_dst);
     if (!rt_entry) {
         /* no route -> destination net unreachable */
-        sr_send_icmp_error_packet(3, 0, sr, ip_hdr->ip_src, (uint8_t *)ip_hdr);
+        sr_send_icmp_error_packet(3, 0, sr, ip_hdr->ip_src, packet + sizeof(sr_ethernet_hdr_t));
         return;
     }
 
@@ -327,7 +327,7 @@ void sr_handle_arp_packet(struct sr_instance *sr,
     if (ntohs(arp_hdr->ar_op) == arp_op_request) {
         if (arp_hdr->ar_tip == iface->ip) {
             uint8_t *reply = malloc(sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t));
-            sr_ethernet_hdr_t *replyEthHdr = (sr_ethernet_hdr_t *)reply;
+            sr_ethernet_hdr_t *replyEthHd| = (sr_ethernet_hdr_t *)reply;
             sr_arp_hdr_t *replyArpHdr = (sr_arp_hdr_t *)(reply + sizeof(sr_ethernet_hdr_t));
 
             ensamblar_eth_header(replyEthHdr, arp_hdr->ar_sha, iface->addr, ethertype_arp);
