@@ -40,6 +40,16 @@ uint32_t icmp_cksum (sr_icmp_hdr_t *icmpHdr, int len) {
 
     return calcChksum;
 }
+uint32_t icmp11_cksum(sr_icmp_t11_hdr_t *icmp11Hdr, int len) {
+    uint16_t currChksum, calcChksum;
+
+    currChksum = icmp11Hdr->icmp_sum;
+    icmp11Hdr->icmp_sum = 0;
+    calcChksum = cksum(icmp11Hdr, len);
+    icmp11Hdr->icmp_sum = currChksum;
+    
+    return calcChksum;
+}
 
 uint32_t icmp3_cksum(sr_icmp_t3_hdr_t *icmp3Hdr, int len) {
     uint16_t currChksum, calcChksum;

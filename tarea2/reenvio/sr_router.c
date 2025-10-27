@@ -80,7 +80,7 @@ void sr_send_icmp_error_packet(uint8_t type,
     uint8_t *icmp_packet = NULL;
 
     if (type == 3) {
-        icmp_len = sizeof(sr_icmp_t3_hdr_t)+ICMP_DATA_SIZE;
+        icmp_len = sizeof(sr_icmp_t3_hdr_t);
         icmp_packet = malloc(icmp_len);
         if (!icmp_packet) { return; }
 
@@ -93,16 +93,17 @@ void sr_send_icmp_error_packet(uint8_t type,
         icmp3->icmp_sum = 0;
         icmp3->icmp_sum = icmp3_cksum(icmp3, sizeof(sr_icmp_t3_hdr_t));
     } else if (type == 11) {
-        icmp_len = sizeof(sr_icmp_hdr_t) + ICMP_DATA_SIZE;
+        icmp_len = sizeof(sr_icmp_t11_hdr_t);
         icmp_packet = malloc(icmp_len);
         if (!icmp_packet) { return; }
 
-        sr_icmp_hdr_t *icmp11 = (sr_icmp_hdr_t *)icmp_packet;
+        sr_icmp_t11_hdr_t *icmp11 = (sr_icmp_t11_hdr_t *)icmp_packet;
         icmp11->icmp_type = type;
         icmp11->icmp_code = code;
+        icmp11->unused = 0;
+        memcpy(icmp11->data, ipPacket, ICMP_DATA_SIZE);
         icmp11->icmp_sum = 0;
-        memcpy(icmp_packet + sizeof(sr_icmp_hdr_t), ipPacket, ICMP_DATA_SIZE);
-        icmp11->icmp_sum = icmp_cksum(icmp11, icmp_len);
+        icmp11->icmp_sum = icmp11_cksum(icmp11,  sizeof(sr_icmp_t11_hdr_t));
     } else {
         return;
     }
