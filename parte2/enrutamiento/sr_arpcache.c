@@ -18,18 +18,65 @@
 void sr_arp_request_send(struct sr_instance *sr, uint32_t ip, char* iface) {
 
 
-  printf("$$$ -> Send ARP request.\n");
-
+ printf("$$$ -> Send ARP request.\n");
   /* 
   * COLOQUE AQÍ SU CÓDIGO
   * SUGERENCIAS: 
   * - Construya el cabezal Ethernet y agregue dirección de destino de broadcast
-  * - Envíe la solicitud ARP desde la interfaz pasada por parámetro, correspondiente a la conectada a la subred de la IP cuya MAC se desea conocer
+  Envíe la solicitud ARP desde la interfaz pasada por parámetro, correspondiente a la conectada a la subred de la IP cuya MAC se desea conocer
   * - Agregue la dirección de origen y el tipo de paquete
   * - Construya el cabezal ARP y envíe el paquete
   */
   
+    /* Determinar interfaz de salida: usar la pasada por parámetro si existe,
+       sino elegir la mejor entrada de ruta para la IP destino */
+    struct sr_if *out_iface = NULL;
+    if (iface) {
+        out_iface = sr_get_interface(sr, iface);
+    }
+    if (!out_iface) {
+        struct sr_rt *mejor_entrada = sr_prefijo_mas_largo(sr, ip);
+        if (!mejor_entrada) {
+            fprintf(stderr, "sr_arp_request_send: no route to host %u\n", ntohl(ip));
+            return;
+        }
+        out_iface = sr_get_interface(sr, mejor_entrada->interface);
+    }
+
+    if (!out_iface) {
+        fprintf(stderr, "sr_arp_request_send: no outgoing interface found\n");
+        return;
+    }
+
+    int arpPacketLen = sizeof(sr_ethernet_hdr_t) + sizeof(sr_arp_hdr_t);
+    uint8_t *arpPacket = (uint8_t *) malloc(arpPacketLen);
+    sr_ethernet_hdr_t *ethHdr = (sr_ethernet_hdr_t *) arpPacket;
+    uint8_t broadcast_addr[ETHER_ADDR_LEN];
+    memset(broadcast_addr, 0xff, ETHER_ADDR_LEN);
+    ensamblar_eth_header(ethHdr, out_iface->addr, broadcast_addr, ethertype_arp);
+    /*ensambla arp header*/
+    sr_arp_hdr_t *arpHdr = (sr_arp_hdr_t *) (arpPacket + sizeof(sr_ethernet_hdr_t));
+    arpHdr->ar_hrd = htons(1);
+    arpHdr->ar_pro = htons(ethertype_ip);
+    arpHdr->ar_hln = ETHER_ADDR_LEN;
+    arpHdr->ar_pln = 4;
+    arpHdr->ar_op = htons(arp_op_request);
+
+    memcpy(arpHdr->ar_sha, out_iface->addr, ETHER_ADDR_LEN);
+    memset(arpHdr->ar_tha, 0x00, ETHER_ADDR_LEN);
+
+    /* iface->ip is expected to be stored in network byte order like other codepaths */
+    arpHdr->ar_sip = out_iface->ip;
+    arpHdr->ar_tip = ip;
+
+    sr_send_packet(sr, arpPacket, arpPacketLen, out_iface->name);
+
+    free(arpPacket);
+
+  
+
   printf("$$$ -> Send ARP request processing complete.\n");
+
 }
 
 /*

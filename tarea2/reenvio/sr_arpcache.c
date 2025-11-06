@@ -28,15 +28,6 @@ void sr_arp_request_send(struct sr_instance *sr, uint32_t ip, char *iface) {
   * - Construya el cabezal ARP y envíe el paquete
   */
   
-/* Build and send an ARP request out of each interface (safe, simple approach).
-     For each interface we set:
-       - Ethernet dst = broadcast
-       - Ethernet src = iface MAC
-       - Ethertype = ARP
-       - ARP fields: hw type = 1, proto = IP, hlen=6, plen=4, op = request
-       - ARP sha = iface MAC, tha = 0, s_ip = iface IP, t_ip = ip (target)
-  */
-
     /* Determinar interfaz de salida: usar la pasada por parámetro si existe,
        sino elegir la mejor entrada de ruta para la IP destino */
     struct sr_if *out_iface = NULL;
