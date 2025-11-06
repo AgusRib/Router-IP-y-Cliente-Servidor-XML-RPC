@@ -91,7 +91,162 @@ int sr_rip_update_route(struct sr_instance* sr,
      *
      */
 
-    return 0;
+    /* Validar entrada RIP */
+    if (!rte || !in_ifname) {
+        return -1;
+    }
+
+    /* Obtener interfaz de entrada */
+    struct sr_if* in_interface = sr_get_interface(sr, in_ifname);
+    if (!in_interface) {
+        Debug("RIP: Interface %s not found\n", in_ifname);
+        return -1;
+    }
+
+    uint32_t network = rte->ip;
+    uint32_t mask = rte->mask;
+    uint16_t announced_metric = ntohl(rte->metric);
+    
+    /* Buscar si ya existe una ruta para este destino */
+    struct sr_rt* existing_route = NULL;
+    for (struct sr_rt* it = sr->routing_table; it; it = it->next) {
+        if (it->dest.s_addr == network && it->mask.s_addr == mask) {
+            existing_route = it;
+            break;
+        }
+    }
+
+    /* Si la métrica anunciada es >= 16: */
+    if (announced_metric >= RIP_INFINITY) {
+        /* Si ya existe una ruta coincidente aprendida desde el mismo vecino, marca la ruta
+     *       como inválida, pone métrica a INFINITY y fija el tiempo de garbage collection. */
+        if (existing_route && existing_route->learned_from == src_ip) {
+            
+            if (existing_route->valid) {
+                Debug("RIP: Route to ");
+                print_addr_ip_int(ntohl(network));
+                Debug(" became unreachable from ");
+                print_addr_ip_int(ntohl(src_ip));
+                Debug("\n");
+                
+                existing_route->metric = RIP_INFINITY;
+                existing_route->valid = 0;
+                existing_route->garbage_collection_time = time(NULL);
+                return 1; /* Tabla modificada */
+            }
+        }
+        /* Si no, ignora el anuncio de infinito */
+        return 0;
+    }
+
+    /* Calcula la nueva métrica sumando el coste del enlace de la interfaz; si resulta >=16,
+     *    descarta la actualización. */
+    uint32_t new_metric = announced_metric + (in_interface->cost ? in_interface->cost : 1);
+    if (new_metric >= RIP_INFINITY) {
+        return 0;
+    }
+
+    time_t current_time = time(NULL);
+
+    /* Si la ruta no existe, inserta una nueva entrada en la tabla de enrutamiento. */
+    if (!existing_route) {
+        struct in_addr dest, gw, netmask;
+        dest.s_addr = network;
+        gw.s_addr = src_ip;
+        netmask.s_addr = mask;
+
+        Debug("RIP: Adding new route to ");
+        print_addr_ip_int(ntohl(network));
+        Debug(" via ");
+        print_addr_ip_int(ntohl(src_ip));
+        Debug(" metric %d\n", new_metric);
+
+        sr_add_rt_entry(sr,
+                       dest,
+                       gw,
+                       netmask,
+                       in_ifname,
+                       new_metric,
+                       src_ip,
+                       rte->route_tag,
+                       current_time,
+                       1,
+                       0);
+        return 1; /* Tabla modificada */
+    }
+
+    /* Si la entrada existe pero está inválida, la revive actualizando métrica, gateway,
+     *    learned_from, interfaz y timestamps. */
+    if (!existing_route->valid) {
+        Debug("RIP: Reviving route to ");
+        print_addr_ip_int(ntohl(network));
+        Debug(" via ");
+        print_addr_ip_int(ntohl(src_ip));
+        Debug(" metric %d\n", new_metric);
+
+        existing_route->metric = new_metric;
+        existing_route->gw.s_addr = src_ip;
+        existing_route->learned_from = src_ip;
+        strncpy(existing_route->interface, in_ifname, sr_IFACE_NAMELEN);
+        existing_route->route_tag = rte->route_tag;
+        existing_route->last_updated = current_time;
+        existing_route->valid = 1;
+        existing_route->garbage_collection_time = 0;
+        return 1; /* Tabla modificada */
+    }
+
+    /* Si la entrada fue aprendida del mismo vecino:*/
+    if (existing_route->learned_from == src_ip) {
+        /* - Actualiza métrica/gateway/timestamps si cambian;   */
+        int changed = 0;
+        
+        if (existing_route->metric != new_metric || 
+            existing_route->gw.s_addr != src_ip) {
+            Debug("RIP: Updating route to ");
+            print_addr_ip_int(ntohl(network));
+            Debug(" from same neighbor, old metric %d, new metric %d\n", 
+                  existing_route->metric, new_metric);
+            
+            existing_route->metric = new_metric;
+            existing_route->gw.s_addr = src_ip;
+            changed = 1;
+        }
+        
+        /* si no, solo refresca el timestamp. */
+        existing_route->last_updated = current_time;
+        existing_route->route_tag = rte->route_tag;
+        
+        return changed ? 1 : 0;
+    }
+
+    /* Si la entrada viene de otro origen, Actualiza campos relevantes: metric, gw, route_tag, learned_from, interface,
+     *    last_updated, valid y garbage_collection_time según corresponda,:
+     *      - Reemplaza la ruta si la nueva métrica es mejor.*/
+        if (new_metric < existing_route->metric) {
+            Debug("RIP: Better route to ");
+            print_addr_ip_int(ntohl(network));
+            Debug(" found, old metric %d, new metric %d\n", 
+                existing_route->metric, new_metric);
+
+            existing_route->metric = new_metric;
+            existing_route->gw.s_addr = src_ip;
+            existing_route->learned_from = src_ip;
+            strncpy(existing_route->interface, in_ifname, sr_IFACE_NAMELEN);
+            existing_route->route_tag = rte->route_tag;
+            existing_route->last_updated = current_time;
+            return 1; /* Tabla modificada */
+        }
+
+    /* *      - Si la métrica es igual y el next-hop coincide, refresca la entrada. */
+        if (new_metric == existing_route->metric && 
+            existing_route->gw.s_addr == src_ip) {
+            existing_route->last_updated = current_time;
+            return 0; /* No es un cambio significativo */
+        }
+
+    /*       - En caso contrario (peor métrica o diferente camino), ignora la actualización.*/
+        return 0;
+
 }
 
 void sr_handle_rip_packet(struct sr_instance* sr,
@@ -180,7 +335,7 @@ void* sr_rip_periodic_advertisement(void* arg) {
     sleep(2); // Esperar a que se inicialice todo
     
     // Agregar las rutas directamente conectadas
-    /************************************************************************************/
+    /*******************************     NO TOQUEMOS PORFAAA      *********************************/
     pthread_mutex_lock(&rip_metadata_lock);
     struct sr_if* int_temp = sr->if_list;
     while(int_temp != NULL)
@@ -227,7 +382,37 @@ void* sr_rip_periodic_advertisement(void* arg) {
         utilizando la dirección de multicast definida (RIP_IP).
         Esto implementa el envío periódico de rutas (anuncios no solicitados) en RIPv2.
     */
+
+    /* Espera inicial de RIP_ADVERT_INTERVAL_SEC antes del primer envío */
+    sleep(RIP_ADVERT_INTERVAL_SEC);
+
+    /* A continuación entra en un bucle infinito que */
+    while (1) {
+        Debug("\n-> RIP: Sending periodic advertisements\n");
+        
+        pthread_mutex_lock(&rip_metadata_lock);
+        
+        /* recorre la lista de interfaces (sr->if_list) */
+        struct sr_if* interface = sr->if_list;
+        while (interface != NULL) {
+            Debug("RIP: Sending unsolicited response on interface %s\n", interface->name);
+            
+            /* y envía una respuesta RIP por cada una, utilizando la dirección de multicast definida (RIP_IP) */
+            sr_rip_send_response(sr, interface, RIP_IP);
+            
+            interface = interface->next;
+        }
+        
+        pthread_mutex_unlock(&rip_metadata_lock);
+        
+        /* cada RIP_ADVERT_INTERVAL_SEC segundos */
+        sleep(RIP_ADVERT_INTERVAL_SEC);
+    }
+
+
+    /* Esto implementa el envío periódico de rutas (anuncios no solicitados) en RIPv2. juas no lo voy a poner en el cabezal pero ysb*/
     return NULL;
+
 }
 
 /* Chequea las rutas y marca las que expiran por timeout */
