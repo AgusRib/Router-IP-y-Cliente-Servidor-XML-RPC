@@ -260,14 +260,78 @@ void sr_handle_rip_packet(struct sr_instance* sr,
     sr_rip_packet_t* rip_packet = (struct sr_rip_packet_t*)(packet + rip_off);
 
     /* Validar paquete RIP */
-
+    if (!sr_rip_validate_packet(rip_packet, rip_len)) {
+        Debug("RIP: Invalid RIP packet received on %s\n", in_ifname ? in_ifname : "(unknown)");
+        return;
+    }
+     /* Extract source IP from IP header (offset 12..15 in IPv4 header) */
+    uint32_t src_ip = 0;
+    memcpy(&src_ip, packet + ip_off + 12, sizeof(uint32_t)); /* src_ip in network byte order */
     /* Si es un RIP_COMMAND_REQUEST, enviar respuesta por la interfaz donde llegó, se sugiere usar función auxiliar sr_rip_send_response */
-
-    /* Si no es un REQUEST, entonces es un RIP_COMMAND_RESPONSE. En caso que no sea un REQUEST o RESPONSE no pasa la validación. */
     
-    /* Procesar entries en el paquete de RESPONSE que llegó, se sugiere usar función auxiliar sr_rip_update_route */
+    if (rip_packet->command == RIP_COMMAND_REQUEST) {
+        struct sr_if* in_iface = sr_get_interface(sr, in_ifname);
+        if (!in_iface) {
+            Debug("RIP: Request received on unknown interface %s\n", in_ifname ? in_ifname : "(null)");
+            return;
+        }
 
-    /* Si hubo un cambio en la tabla, generar triggered update e imprimir tabla */
+        Debug("RIP: Received REQUEST on %s from ", in_ifname);
+        print_addr_ip_int(ntohl(src_ip));
+        Debug(", sending unicast response\n");
+
+        /* Lock metadata while preparing/sending response as other threads do */
+        pthread_mutex_lock(&rip_metadata_lock);
+        sr_rip_send_response(sr, in_iface, src_ip);
+        pthread_mutex_unlock(&rip_metadata_lock);
+
+        return;
+    }
+    /* Si no es un REQUEST, entonces es un RIP_COMMAND_RESPONSE. En caso que no sea un REQUEST o RESPONSE no pasa la validación. */
+    if (rip_packet->command == RIP_COMMAND_RESPONSE) {
+        unsigned int entry_size = sizeof(struct sr_rip_entry_t);
+        unsigned int hdr_size = sizeof(struct sr_rip_packet_t);
+        unsigned int entries_count = 0;
+        /* Procesar entries en el paquete de RESPONSE que llegó, se sugiere usar función auxiliar sr_rip_update_route */
+        if (rip_len >= hdr_size) {
+            entries_count = (rip_len - hdr_size) / entry_size;
+        }
+
+        if (entries_count == 0) {
+            Debug("RIP: Response with no entries on %s\n", in_ifname ? in_ifname : "(unknown)");
+            return;
+        }
+
+        sr_rip_entry_t* entries = (sr_rip_entry_t*)(packet + rip_off + hdr_size);
+        int table_changed = 0;
+
+        pthread_mutex_lock(&rip_metadata_lock);
+
+        for (unsigned int i = 0; i < entries_count; ++i) {
+            int res = sr_rip_update_route(sr, &entries[i], src_ip, in_ifname);
+            if (res == 1) {
+                table_changed = 1;
+            }
+        }
+        /* Si hubo un cambio en la tabla, generar triggered update e imprimir tabla */
+        if (table_changed) {
+            Debug("RIP: Triggered update due to routing table change\n");
+            /* Triggered update: send unsolicited response to multicast on all interfaces */
+            struct sr_if* iface = sr->if_list;
+            while (iface) {
+                sr_rip_send_response(sr, iface, RIP_IP);
+                iface = iface->next;
+            }
+            Debug("-> RIP: Printing the forwarding table\n");
+            print_routing_table(sr);
+        }
+
+        pthread_mutex_unlock(&rip_metadata_lock);
+        return;
+    }
+
+    /* Other commands are ignored (already filtered by validation but keep a guard) */
+    Debug("RIP: Unknown RIP command %d on %s\n", rip_packet->command, in_ifname ? in_ifname : "(unknown)");
 }
 
 void sr_rip_send_response(struct sr_instance* sr, struct sr_if* interface, uint32_t ipDst) {
@@ -533,6 +597,48 @@ void* sr_rip_timeout_manager(void* arg) {
 /* Chequea las rutas marcadas como garbage collection y las elimina si expira el timer */
 void* sr_rip_garbage_collection_manager(void* arg) {
     struct sr_instance* sr = arg;
+    while true {
+        sleep(1);
+        int table_changed = 0;
+        time_t current_time = time(NULL);
+        pthread_mutex_lock(&rip_metadata_lock);
+        struct sr_rt* prev = NULL;
+        struct sr_rt* curr = sr->routing_table;
+        while (curr != NULL) {
+            if (!curr->valid && 
+                (current_time >= curr->garbage_collection_time + RIP_GARBAGE_COLLECTION_SEC)) {
+                Debug("RIP: Removing route to ");
+                print_addr_ip_int(ntohl(curr->dest.s_addr));
+                Debug(" from routing table (garbage collection)\n");
+                
+                struct sr_rt* to_delete = curr;
+                if (prev == NULL) {
+                    sr->routing_table = curr->next;
+                    curr = sr->routing_table;
+                } else {
+                    prev->next = curr->next;
+                    curr = prev->next;
+                }
+                sr_free_rt_entry(to_delete);
+                table_changed = 1;
+            } else {
+                prev = curr;
+                curr = curr->next;
+            }
+        }
+        if (table_changed) {
+            Debug("RIP: Triggered update due to garbage collection\n");
+            /* Triggered update: send unsolicited response to multicast on all interfaces */
+            struct sr_if* iface = sr->if_list;
+            while (iface) {
+                sr_rip_send_response(sr, iface, RIP_IP);
+                iface = iface->next;
+            }
+            Debug("-> RIP: Printing the forwarding table\n");
+            print_routing_table(sr);
+        }
+        pthread_mutex_unlock(&rip_metadata_lock);
+    }
     /*
         - Bucle infinito que espera 1 segundo entre comprobaciones.
         - Recorre la tabla de enrutamiento y elimina aquellas rutas que:
