@@ -23,6 +23,19 @@
 
 #include "sr_utils.h"
 
+/* Configuración RIP - Banderas de compilación */
+#ifndef DISABLE_SPLIT_HORIZON
+#define SPLIT_HORIZON_ENABLED 1
+#else
+#define SPLIT_HORIZON_ENABLED 0
+#endif
+
+#ifndef DISABLE_TRIGGERED_UPDATES
+#define TRIGGERED_UPDATES_ENABLED 1
+#else
+#define TRIGGERED_UPDATES_ENABLED 0
+#endif
+
 static pthread_mutex_t rip_metadata_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Dirección MAC de multicast para los paquetes RIP */
@@ -315,13 +328,17 @@ void sr_handle_rip_packet(struct sr_instance* sr,
         }
         /* Si hubo un cambio en la tabla, generar triggered update e imprimir tabla */
         if (table_changed) {
-            Debug("RIP: Triggered update due to routing table change\n");
+#if TRIGGERED_UPDATES_ENABLED
+            Debug("RIP: Triggered update por cambio en la tabla\n");
             /* Triggered update: send unsolicited response to multicast on all interfaces */
             struct sr_if* iface = sr->if_list;
             while (iface) {
                 sr_rip_send_response(sr, iface, RIP_IP);
                 iface = iface->next;
             }
+#else
+            Debug("RIP: Triggered updates DESACTIVADOS - tabla cambio pero no se mandan mensajes\n");
+#endif
             Debug("-> RIP: Printing the forwarding table\n");
             print_routing_table(sr);
         }
@@ -345,7 +362,7 @@ void sr_rip_send_response(struct sr_instance* sr, struct sr_if* interface, uint3
     
     /* Construir cabecera IP */
     sr_ip_hdr_t* ip_hdr = (sr_ip_hdr_t*)(buff + sizeof(sr_ethernet_hdr_t));
-    ensamblar_ip_header(ip_hdr, interface->ip, ipDst, 1, 0 /* luego se actualiza */, ip_protocol_udp);
+    ensamblar_ip_header(ip_hdr, interface->ip, ipDst, 0 /* luego se actualiza */, ip_protocol_udp, 1);
         /* RIP usa TTL=1 */
     
     /* Construir cabecera UDP */
@@ -364,20 +381,38 @@ void sr_rip_send_response(struct sr_instance* sr, struct sr_if* interface, uint3
         while (rt_iter != NULL && entry_count < MAX_RIP_ENTRIES) {
         /* Llenar cada entrada con la información de la tabla de enrutamiento */
           sr_rip_entry_t* rip_entry = (sr_rip_entry_t*)(buff + sizeof(sr_ethernet_hdr_t) + sizeof(sr_ip_hdr_t) +sizeof(sr_udp_hdr_t) + sizeof(sr_rip_packet_t) + (entry_count * sizeof(sr_rip_entry_t)));
-          rip_entry->family = htons(2);  // IPv4
-          rip_entry->route_tag = htons(rt_iter->route_tag);
+          rip_entry->family_identifier = htons(2);  // IPv4
+          rip_entry->route_tag = 0;
           rip_entry->ip = rt_iter->dest.s_addr;
           rip_entry->mask = rt_iter->mask.s_addr;
           rip_entry->next_hop = 0; // Siempre 0.0.0.0
             
 
+#if SPLIT_HORIZON_ENABLED
           if (rt_iter->learned_from == ipDst || rt_iter->valid == 0) {
                 // Split horizon con reversinha envenenadinha
                 rip_entry->metric = htonl(RIP_INFINITY);
+                Debug("RIP: Split horizon - tirando pocion de envenenamiento *sonidos de bruja* ");
+                print_addr_ip_int(ntohl(rt_iter->dest.s_addr));
+                Debug(" for destination ");
+                print_addr_ip_int(ntohl(ipDst));
+                Debug("\n");
             } else  {
                 uint32_t metric = (rt_iter->metric < RIP_INFINITY) ? rt_iter->metric : RIP_INFINITY;
                 rip_entry->metric = htonl(metric);
             }
+#else
+            // Split horizon deshabilitado - enviar métrica real siempre
+            if (rt_iter->valid == 0) {
+                rip_entry->metric = htonl(RIP_INFINITY);
+            } else {
+                uint32_t metric = (rt_iter->metric < RIP_INFINITY) ? rt_iter->metric : RIP_INFINITY;
+                rip_entry->metric = htonl(metric);
+            }
+            Debug("RIP: Split horizon DESACTIVADO- enviando métrica real para ");
+            print_addr_ip_int(ntohl(rt_iter->dest.s_addr));
+            Debug("\n");
+#endif
 
             rt_iter = rt_iter->next;
             entry_count++;
@@ -398,14 +433,14 @@ void sr_rip_send_response(struct sr_instance* sr, struct sr_if* interface, uint3
     uint16_t ip_len = total_len - sizeof(sr_ethernet_hdr_t);
     uint16_t udp_len = sizeof(sr_udp_hdr_t) + sizeof(sr_rip_packet_t) + (entry_count * sizeof(sr_rip_entry_t));
     ip_hdr->ip_len = htons(ip_len);
-    udp_hdr->len = htons(udp_len);
+    udp_hdr->length = htons(udp_len);
 
     /* Calcular checksums */
     ip_hdr->ip_sum = 0;
     ip_hdr->ip_sum = ip_cksum(ip_hdr, sizeof(sr_ip_hdr_t));
 
-    udp_hdr->udp_sum = 0;
-    udp_hdr->udp_sum = udp_cksum(udp_hdr, ip_hdr, (uint8_t*)rip_hdr, udp_len);
+    udp_hdr->checksum = 0;
+    udp_hdr->checksum = udp_cksum(ip_hdr, udp_hdr, (uint8_t*)rip_hdr);
 
     /* Enviar paquete */
     sr_send_packet(sr, buff, total_len, interface->name);
@@ -532,7 +567,7 @@ void* sr_rip_periodic_advertisement(void* arg) {
 /* Chequea las rutas y marca las que expiran por timeout */
 void* sr_rip_timeout_manager(void* arg) {
     struct sr_instance* sr = arg;
-    sr_rt* rt_iter;
+    struct sr_rt* rt_iter;
 
    while(1) {
         sleep(1); // Esperar 1 segundo entre comprobaciones.
@@ -567,12 +602,16 @@ void* sr_rip_timeout_manager(void* arg) {
         /* Si se detectan cambios, se desencadena una actualización (triggered update)
         hacia los vecinos y se actualiza/visualiza la tabla de enrutamiento. */
         if (table_changed) {
+#if TRIGGERED_UPDATES_ENABLED
             Debug("\n-> RIP: Trigger update por cambios en la tabla\n");
             struct sr_if* interface = sr->if_list;
             while (interface != NULL) {
                 sr_rip_send_response(sr, interface, RIP_IP);
                 interface = interface->next;
             }
+#else
+            Debug("\n-> RIP: Triggered updates DESACTIVADOS - timeoutdetectado pero no se mandan mensajess\n");
+#endif
 
             Debug("-> RIP: Imprimo la tabla de forwarding\n");
             print_routing_table(sr);
@@ -597,7 +636,7 @@ void* sr_rip_timeout_manager(void* arg) {
 /* Chequea las rutas marcadas como garbage collection y las elimina si expira el timer */
 void* sr_rip_garbage_collection_manager(void* arg) {
     struct sr_instance* sr = arg;
-    while true {
+    while (1) {
         sleep(1);
         int table_changed = 0;
         time_t current_time = time(NULL);
@@ -627,6 +666,7 @@ void* sr_rip_garbage_collection_manager(void* arg) {
             }
         }
         if (table_changed) {
+#if TRIGGERED_UPDATES_ENABLED
             Debug("RIP: Triggered update due to garbage collection\n");
             /* Triggered update: send unsolicited response to multicast on all interfaces */
             struct sr_if* iface = sr->if_list;
@@ -634,6 +674,9 @@ void* sr_rip_garbage_collection_manager(void* arg) {
                 sr_rip_send_response(sr, iface, RIP_IP);
                 iface = iface->next;
             }
+#else
+            Debug("RIP: Triggered updates DESACTIVADOS - garbage collection completado pero no se mandan mensajess\n");
+#endif
             Debug("-> RIP: Printing the forwarding table\n");
             print_routing_table(sr);
         }
@@ -654,6 +697,21 @@ void* sr_rip_garbage_collection_manager(void* arg) {
 
 /* Inicialización subsistema RIP */
 int sr_rip_init(struct sr_instance* sr) {
+    /* Mostrar configuración de RIP */
+    printf("RIP Configuration:\n");
+#if SPLIT_HORIZON_ENABLED
+    printf("  - Split Horizon with Poisoned Reverse: ENABLED\n");
+#else
+    printf("  - Split Horizon with Poisoned Reverse: DISABLED\n");
+#endif
+
+#if TRIGGERED_UPDATES_ENABLED
+    printf("  - Triggered Updates: ENABLED\n");
+#else
+    printf("  - Triggered Updates: DISABLED\n");
+#endif
+    printf("\n");
+
     /* Inicializar mutex */
     if(pthread_mutex_init(&sr->rip_subsys.lock, NULL) != 0) {
         printf("RIP: Error initializing mutex\n");
@@ -697,13 +755,14 @@ int sr_rip_init(struct sr_instance* sr) {
     return 0;
 }
 
-ensamblar_udp_header(sr_udp_hdr_t* udp_hdr, uint16_t src_port, uint16_t dest_port, uint16_t length) {
+void ensamblar_udp_header(sr_udp_hdr_t* udp_hdr, uint16_t src_port, uint16_t dest_port, uint16_t length) {
     udp_hdr->src_port = htons(src_port);
-    udp_hdr->dest_port = htons(dest_port);
+    udp_hdr->dst_port = htons(dest_port);
     udp_hdr->length = htons(length);
     udp_hdr->checksum = 0; // Inicialmente 0, se calcula después
+}
 
-ensamblar_rip_header(sr_rip_packet_t* rip_hdr, uint8_t command, uint8_t version) {
+void ensamblar_rip_header(sr_rip_packet_t* rip_hdr, uint8_t command, uint8_t version) {
     rip_hdr->command = command;
     rip_hdr->version = version;
     rip_hdr->zero = 0;

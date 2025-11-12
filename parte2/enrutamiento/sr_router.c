@@ -116,7 +116,7 @@ void sr_send_icmp_error_packet(uint8_t type,
     uint8_t ip_nupacket[sizeof(sr_ip_hdr_t) + icmp_len];
     struct sr_ip_hdr *ip_hdr = (struct sr_ip_hdr *)ip_nupacket;
     ensamblar_ip_header(ip_hdr, interfaz_salida->ip, orig_ip_hdr->ip_src,
-                    sizeof(ip_nupacket), ip_protocol_icmp);
+                    sizeof(ip_nupacket), ip_protocol_icmp, 64);
     memcpy(ip_nupacket + sizeof(sr_ip_hdr_t), icmp_packet, icmp_len);
 
     /* Resolver MAC destino (ARP) */
@@ -290,7 +290,7 @@ void sr_handle_ip_packet(struct sr_instance *sr,
 
 
 
-                        unsigned int rip_off = sizeof(sr_ethernet_hdr_t) + ip_hdr_len ; /* GPT RECOMIENDA: UDP header es 8 bytes */
+                        unsigned int rip_off = sizeof(sr_ethernet_hdr_t) + ip_hdr_len + 8 ; /* GPT RECOMIENDA: UDP header es 8 bytes */
                         unsigned int rip_len = ip_total_len - ip_hdr_len - 8;
 
 
@@ -298,23 +298,7 @@ void sr_handle_ip_packet(struct sr_instance *sr,
 
 
 
-                     sr_rip_handle_packet(sr, packet, len, ip_hdr_len, rip_off, rip_len, dest_iface->name);
-                     
-                     
-
-
-
-
-
-
-
-
-
-
-
-                     
-                     
-                     
+                     sr_handle_rip_packet(sr, packet, len, ip_hdr_len, rip_off, rip_len, dest_iface->name);
                      return;
                  }
  
@@ -578,9 +562,9 @@ struct sr_rt* sr_prefijo_mas_largo(struct sr_instance* sr, uint32_t ip)
 void ensamblar_ip_header(struct sr_ip_hdr *ip_hdr,
                      uint32_t src_ip,
                      uint32_t dst_ip, 
-                     uint8_t ttl,
                      uint16_t total_len,
-                     uint8_t protocol)
+                     uint8_t protocol,
+                     uint8_t ttl)
 {
     ip_hdr->ip_v = 4;
     ip_hdr->ip_hl = 5;

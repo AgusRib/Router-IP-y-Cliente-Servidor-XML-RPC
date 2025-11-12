@@ -45,8 +45,7 @@ def run_network():
 
     time.sleep(3)
 
-    info('*** Ejecutando cliente\n')
-    client.cmd('python3 client2.py')
+
 
     info('*** Pruebas de red\n')
     info('Ping del cliente a server1:\n')

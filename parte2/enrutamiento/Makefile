@@ -32,7 +32,20 @@ ARCH = -D_DARWIN_
 SOCK = -lresolv
 endif
 
+# Variables de configuración RIP
+DISABLE_SPLIT_HORIZON ?= 0
+DISABLE_TRIGGERED_UPDATES ?= 0
+
 CFLAGS = -g -Wall -std=gnu11 -D_DEBUG_ -D_GNU_SOURCE $(ARCH)
+
+# Agregar flags condicionales basados en variables
+ifeq ($(DISABLE_SPLIT_HORIZON), 1)
+    CFLAGS += -DDISABLE_SPLIT_HORIZON
+endif
+
+ifeq ($(DISABLE_TRIGGERED_UPDATES), 1)
+    CFLAGS += -DDISABLE_TRIGGERED_UPDATES
+endif
 
 LIBS= $(SOCK) -lm -lpthread
 PFLAGS= -follow-child-processes=yes -cache-dir=/tmp/${USER} 
@@ -83,4 +96,6 @@ tags:
 	
 submit:
 	@tar -czf router-submit.tar.gz $(sr_SRCS) $(sr_HDRS) README Makefile
+
+
 

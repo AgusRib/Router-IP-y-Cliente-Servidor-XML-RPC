@@ -13,12 +13,16 @@
 #ifndef SR_RIP_H
 #define SR_RIP_H
 
+#include "sr_protocol.h"
+
 #define RIP_IP 0xE0000009  /* 224.0.0.9 - RIPv2 multicast address */
 #define RIP_PORT 520
 #define RIP_COMMAND_REQUEST 1
 #define RIP_COMMAND_RESPONSE 2
 #define RIP_VERSION 2
 #define INFINITY 16
+#define RIP_INFINITY 16
+#define MAX_RIP_ENTRIES 25
 #define RIP_ADVERT_INTERVAL_SEC 10
 #define RIP_TIMEOUT_SEC 60
 #define RIP_GARBAGE_COLLECTION_SEC 40
@@ -54,5 +58,9 @@ void* sr_rip_timeout_manager(void* arg);
 int sr_rip_init(struct sr_instance* sr);
 int sr_rip_update_route(struct sr_instance* sr, const struct sr_rip_entry_t* rte, uint32_t src_ip, const char* in_ifname);
 int sr_rip_validate_packet(struct sr_rip_packet_t* packet, unsigned int len);
+
+/* Funciones auxiliares para ensamblar headers */
+void ensamblar_udp_header(sr_udp_hdr_t* udp_hdr, uint16_t src_port, uint16_t dest_port, uint16_t length);
+void ensamblar_rip_header(sr_rip_packet_t* rip_hdr, uint8_t command, uint8_t version);
 
 #endif /* SR_RIP_H */
