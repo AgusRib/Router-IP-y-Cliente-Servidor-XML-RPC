@@ -25,7 +25,7 @@ def test_ICMP(): #==========================================
     # Test destination net unreachable 
 
     try:
-        client.connect("285.402.0.2", 12000) #esto deberia hacerlo saltar
+        client.connect("205.205.0.2", 12000) #esto deberia hacerlo saltar
         result = client.multiplicar(4, 5)
         print(f"multiplicar(4, 5) = {result}")
         client.connect("150.150.0.2", 12000)
@@ -44,6 +44,14 @@ def test_ICMP(): #==========================================
         print(f"ordenar([3, 7, 4, 6, 2]) = {result2}")
     except Exception as e:
         print(f"OK port unreachable: {e}")
+
+    try:
+        print("Probando destination host unreachable...")
+        client.connect("150.150.0.99", 12000)  # Host inexistente en subnet del server1
+        result = client.multiplicar(4, 5)
+        print(f"multiplicar(4, 5) = {result}")
+    except Exception as e:
+        print(f"OK destination host unreachable: {e}")
 
     
 """def test_ping(): #==========================================
