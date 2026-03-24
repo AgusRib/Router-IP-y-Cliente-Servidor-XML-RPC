@@ -1,93 +1,112 @@
-# Lab Redes RdC
+
+Simple IP Router & Cliente-Servidor XML-RPC 
+
+Este repositorio contiene una implementación completa (Full-Stack Networking) que abarca desde la capa de red hasta la capa de aplicación. El proyecto integra un **Enrutador IP programado en C** (con soporte para IP Forwarding, ARP, ICMP y enrutamiento dinámico RIPv2) operando sobre una red SDN simulada en **Mininet**, junto con una arquitectura **Cliente-Servidor XML-RPC en Python** desarrollada desde cero sobre sockets POSIX.
 
 
 
-## Getting started
+##  Estructura del Repositorio
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+*   **`Cli-Serv/`** (Capa de Aplicación - XML-RPC)
+    *   `client2.py` / `server2.py`: Implementación del protocolo XML-RPC utilizando sockets nativos de Python sobre HTTP (POST).
+    *   `tests/`: Batería de pruebas concurrentes, tests de estrés, y scripts auxiliares (`testConcurrencia.py`, simulación de clientes falsos, etc.).
+*   **`Router/`** (Capa de Red - Enrutador IP y Entorno SDN)
+    *   `enrutamiento/`: Código fuente en C del enrutador virtual. Contiene la lógica central de reenvío IP, caché ARP (`sr_arpcache.c`), tablas estáticas (`sr_rt.c`) y el protocolo RIPv2 (`sr_rip.c`).
+    *   `pox/` y `pox_module/`: Controlador SDN utilizado como framework de base.
+    *   `pwospf_topo.py`: Topología de Mininet (1 cliente, 2 servidores, 5 routers).
+    *   Scripts de despliegue: `run_mininet.sh`, `run_pox.sh`, `run_sr.sh`.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+---
 
-## Add your files
+##  Funcionalidades Implementadas
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### 1. Biblioteca de Procedimientos Remotos (XML-RPC)
+Arquitectura cliente-servidor desarrollada desde cero con la API de sockets POSIX de Python.
+*   **Cliente:** Captura de parámetros dinámica, serialización (marshalling) a formato XML y transmisión mediante peticiones HTTP POST.
+*   **Servidor:** Escucha concurrente, validación de HTTP, parseo de XML (unmarshalling), ejecución de procedimientos remotos y encapsulación de las respuestas.
+*   **Gestión de Errores:** Control de faltas (Faults) en tiempo de ejecución por errores de serialización, métodos inexistentes y parámetros inválidos.
 
+### 2. Enrutador IP (IP Forwarding & Routing)
+Motor completo de procesamiento de datagramas implementado en C:
+*   **Reenvío (Forwarding) y ARP:** Análisis de tramas raw Ethernet, validación de sumas de comprobación IP, alteración de TTL y *Longest Prefix Match*. Resolución y encolamiento de resoluciones físicas usando una tabla temporal (ARP Cache).
+*   **Enrutamiento Dinámico (RIPv2):** Implementación del algoritmo vector-distancia para el autodescubrimiento de rutas. Utiliza actualizaciones UDP (puerto 520) dirigidas a la IP multicast `224.0.0.9`. Soporta métricas infinitas y limpieza de rutas inactivas (*timeout* y *garbage-collector*).
+*   **Mensajería ICMP:** Generación de notificaciones de error: *Echo Reply*, *Destination Net/Host Unreachable*, *Port Unreachable* y *Time Exceeded*.
+
+---
+
+##  Dependencias y Despliegue
+
+El proyecto está diseñado para ejecutarse en entornos Linux equipados con las siguientes herramientas:
+*   **Mininet**: Simulador de topologías de red.
+*   **POX**: Plataforma de control SDN basada en Python.
+*   **Python 3.x**: Entorno de ejecución para el stack XML-RPC.
+*   **Herramientas C (`gcc`, `make`)**: Para la compilación de la lógica del enrutador.
+
+### 1. Compilar el Enrutador
+Abre una terminal y compila el código fuente en C:
+```bash
+cd Router/enrutamiento
+make
 ```
-cd existing_repo
-git remote add origin https://gitlab.fing.edu.uy/martin.sader/lab-redes-rdc.git
-git branch -M main
-git push -uf origin main
+
+### 2. Iniciar la Infraestructura de Red (SDN & Mininet)
+Se recomienda utilizar terminales independientes para cada componente.
+
+*   **Terminal 1 (Controlador POX):**
+    ```bash
+    cd Router
+    ./run_pox.sh
+    ```
+*   **Terminal 2 (Topología Mininet):**
+    Una vez inicializado POX, levanta la red virtual:
+    ```bash
+    cd Router
+    sudo ./run_mininet.sh
+    ```
+
+### 3. Ejecutar los Nodos Enrutadores (Simple Router)
+Mantén interactiva la consola de Mininet. Abre 5 terminales adicionales (una para cada switch virtual) y conecta la instancia de enrutamiento al controlador:
+```bash
+cd Router
+./run_sr.sh 127.0.0.1 vhost1
+# Repite la ejecución para vhost2, vhost3, vhost4 y vhost5
 ```
 
-## Integrate with your tools
+### 4. Pruebas Básicas de Red
+Desde la línea de comandos de Mininet (`mininet>`), comprueba el estado de los enlaces y la resolución RIP/ARP:
+```bash
+mininet> client ping -c 3 150.150.0.2
+mininet> client traceroute -n 100.100.0.2
+```
 
-- [ ] [Set up project integrations](https://gitlab.fing.edu.uy/martin.sader/lab-redes-rdc/-/settings/integrations)
+### 5. Ejecución del Entorno Aplicativo RPC
+Con la capa de red estabilizada, inicia el tráfico de aplicación inyectando los scripts Python en los nodos (`server1`, `server2`, `client`):
 
-## Collaborate with your team
+```bash
+mininet> server1 nohup python3 ../Cli-Serv/server2.py &
+mininet> server2 nohup python3 ../Cli-Serv/server2.py &
+mininet> client python3 ../Cli-Serv/tests/ClienteTest.py
+```
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+### 6. Captura de Tráfico (Wireshark / tcpdump)
+Para la depuración del intermedio (mensajes de convergencia RIP o análisis XML), puedes enganchar `tcpdump` a las interfaces virtuales:
+```bash
+mininet> server1 nohup sudo tcpdump -n -i server1-eth0 -w server1.pcap &
+mininet> vhost1 nohup sudo tcpdump -n -i vhost1-eth1 -w vhost1.pcap &
+```
+Al culminar la experimentación, detén los procesos para escribir correctamente los archivos `.pcap`:
+```bash
+mininet> server1 killall tcpdump
+mininet> vhost1 killall tcpdump
+```
 
-## Test and Deploy
+---
 
-Use the built-in continuous integration in GitLab.
+##  Créditos y Reconocimientos
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+Este proyecto toma como base bibliotecas de infraestructura y código *stub* académico de código abierto:
 
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+*   **Simple Router (SR) / VNS (Virtual Network System):** La arquitectura base en C para el desarrollo del enrutador IP emulado fue concebida originariamente por la **Universidad de Stanford** para su curso *CS144*.
+*   **Controlador POX:** Framework OpenFlow / SDN desarrollado por James McCauley ([repositorio](https://github.com/noxrepo/pox)).
+*   **Mininet:** Herramienta ágil orientada a la creación de redes de computadoras virtuales realistas.
+```
