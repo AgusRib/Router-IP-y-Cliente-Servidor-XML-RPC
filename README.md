@@ -109,4 +109,5 @@ Este proyecto toma como base bibliotecas de infraestructura y código *stub* aca
 *   **Simple Router (SR) / VNS (Virtual Network System):** La arquitectura base en C para el desarrollo del enrutador IP emulado fue concebida originariamente por la **Universidad de Stanford** para su curso *CS144*.
 *   **Controlador POX:** Framework OpenFlow / SDN desarrollado por James McCauley ([repositorio](https://github.com/noxrepo/pox)).
 *   **Mininet:** Herramienta ágil orientada a la creación de redes de computadoras virtuales realistas.
+*   Entorno Base: Los scripts de configuración de red y la topología de prueba para Mininet (pwospf_topo.py) fueron provistos por el equipo docente del curso de Redes de Computadoras.
 ```
